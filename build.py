@@ -34,6 +34,21 @@ SITES = [
 
 ITEMS_PER_SITE = 7
 
+def decode_entities(s):
+    s = re.sub(r'&#(\d+);', lambda m: chr(int(m.group(1))), s)
+    s = re.sub(r'&#x([0-9a-fA-F]+);', lambda m: chr(int(m.group(1), 16)), s)
+    return s.replace('&amp;','&').replace('&lt;','<').replace('&gt;','>').replace('&quot;','"').replace('&apos;',"'")
+
+def extract_tag(text, tag):
+    """タグ名（名前空間なし）の中身を取得"""
+    # <xxx:tag> or <tag> 両方対応
+    m = re.search(r'<(?:[^:>\s]+:)?' + tag + r'(?:\s[^>]*)?>([^<]*(?:<!\[CDATA\[.*?\]\]>[^<]*)*)</(?:[^:>]+:)?' + tag + r'>', text, re.DOTALL)
+    if m:
+        val = m.group(1)
+        val = re.sub(r'<!\[CDATA\[(.*?)\]\]>', r'\1', val, flags=re.DOTALL)
+        return val.strip()
+    return ''
+
 def fetch_rss(site):
     headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
@@ -56,42 +71,18 @@ def fetch_rss(site):
     else:
         text = raw.decode("utf-8", errors="replace")
 
-    return parse_rss(text)
-
-def parse_rss(text):
-    """正規表現でitemを抽出（名前空間エラーを完全回避）"""
-    # CDATAを展開
-    text = re.sub(r'<!\[CDATA\[(.*?)\]\]>', lambda m: m.group(1), text, flags=re.DOTALL)
+    # <item> ブロックを正規表現で抽出（名前空間付きも対応）
+    item_blocks = re.findall(r'<(?:[^:>\s]+:)?item[\s>].*?</(?:[^:>]+:)?item>', text, re.DOTALL)
 
     items = []
-    # <item>〜</item> を抽出
-    for item_match in re.finditer(r'<item[\s>].*?</item>', text, re.DOTALL | re.IGNORECASE):
-        item_text = item_match.group(0)
-
-        # title抽出
-        title = ''
-        tm = re.search(r'<title[^>]*>(.*?)</title>', item_text, re.DOTALL | re.IGNORECASE)
-        if tm:
-            title = re.sub(r'<[^>]+>', '', tm.group(1)).strip()
-
-        # link抽出
-        link = ''
-        lm = re.search(r'<link[^>]*>(.*?)</link>', item_text, re.DOTALL | re.IGNORECASE)
-        if lm:
-            link = lm.group(1).strip()
+    for block in item_blocks:
+        title = decode_entities(extract_tag(block, 'title'))
+        link  = decode_entities(extract_tag(block, 'link'))
         if not link:
-            # <link /> の次のテキスト（RSS1.0形式）
-            lm2 = re.search(r'<link\s*/?>([^\s<]+)', item_text, re.IGNORECASE)
-            if lm2:
-                link = lm2.group(1).strip()
-        if not link:
-            gm = re.search(r'<guid[^>]*>(.*?)</guid>', item_text, re.DOTALL | re.IGNORECASE)
-            if gm:
-                link = gm.group(1).strip()
-
-        # HTMLエンティティのデコード
-        title = title.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>').replace('&quot;', '"').replace('&#39;', "'")
-        link = link.replace('&amp;', '&')
+            link = decode_entities(extract_tag(block, 'guid'))
+        # タグを除去
+        title = re.sub(r'<[^>]+>', '', title).strip()
+        link  = re.sub(r'<[^>]+>', '', link).strip()
 
         if title and link and link.startswith('http'):
             items.append({"title": title, "link": link})
