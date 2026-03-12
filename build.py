@@ -1,12 +1,6 @@
 #!/usr/bin/env python3
-"""
-RSS取得 → docs/index.html 生成スクリプト
-GitHub Actions から呼ばれる
-"""
-
 import urllib.request
 import urllib.parse
-import xml.etree.ElementTree as ET
 import gzip
 import re
 import os
@@ -42,7 +36,7 @@ ITEMS_PER_SITE = 7
 
 def fetch_rss(site):
     headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
         "Accept": "application/rss+xml, application/xml, text/xml, */*",
         "Accept-Encoding": "gzip, deflate",
         "Accept-Language": "ja,en;q=0.9",
@@ -53,7 +47,6 @@ def fetch_rss(site):
         if resp.info().get("Content-Encoding") == "gzip" or raw[:2] == b'\x1f\x8b':
             raw = gzip.decompress(raw)
 
-    # エンコーディング検出
     for enc in ("utf-8", "shift_jis", "euc-jp", "utf-8-sig"):
         try:
             text = raw.decode(enc)
@@ -63,31 +56,48 @@ def fetch_rss(site):
     else:
         text = raw.decode("utf-8", errors="replace")
 
-    # CDATAを展開
-    text = re.sub(r'<!\[CDATA\[(.*?)\]\]>',
-                  lambda m: m.group(1).replace('&','&amp;').replace('<','&lt;').replace('>','&gt;'),
-                  text, flags=re.DOTALL)
-    # 名前空間除去
-    text = re.sub(r'\s+xmlns(?::[a-z]+)?="[^"]*"', '', text)
-    text = re.sub(r'<(?:[a-z]+:)(item|title|link|guid)>', r'<\1>', text)
-    text = re.sub(r'</(?:[a-z]+:)(item|title|link|guid)>', r'</\1>', text)
+    return parse_rss(text)
 
-    try:
-        root = ET.fromstring(text)
-    except ET.ParseError:
-        text2 = re.sub(r'<\?xml[^?]*\?>', '', text)
-        root = ET.fromstring(f'<root>{text2}</root>')
+def parse_rss(text):
+    """正規表現でitemを抽出（名前空間エラーを完全回避）"""
+    # CDATAを展開
+    text = re.sub(r'<!\[CDATA\[(.*?)\]\]>', lambda m: m.group(1), text, flags=re.DOTALL)
 
     items = []
-    for item in root.iter('item'):
-        title = (item.findtext('title') or '').strip()
-        link  = (item.findtext('link')  or '').strip()
+    # <item>〜</item> を抽出
+    for item_match in re.finditer(r'<item[\s>].*?</item>', text, re.DOTALL | re.IGNORECASE):
+        item_text = item_match.group(0)
+
+        # title抽出
+        title = ''
+        tm = re.search(r'<title[^>]*>(.*?)</title>', item_text, re.DOTALL | re.IGNORECASE)
+        if tm:
+            title = re.sub(r'<[^>]+>', '', tm.group(1)).strip()
+
+        # link抽出
+        link = ''
+        lm = re.search(r'<link[^>]*>(.*?)</link>', item_text, re.DOTALL | re.IGNORECASE)
+        if lm:
+            link = lm.group(1).strip()
         if not link:
-            link = (item.findtext('guid') or '').strip()
-        if title and link:
+            # <link /> の次のテキスト（RSS1.0形式）
+            lm2 = re.search(r'<link\s*/?>([^\s<]+)', item_text, re.IGNORECASE)
+            if lm2:
+                link = lm2.group(1).strip()
+        if not link:
+            gm = re.search(r'<guid[^>]*>(.*?)</guid>', item_text, re.DOTALL | re.IGNORECASE)
+            if gm:
+                link = gm.group(1).strip()
+
+        # HTMLエンティティのデコード
+        title = title.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>').replace('&quot;', '"').replace('&#39;', "'")
+        link = link.replace('&amp;', '&')
+
+        if title and link and link.startswith('http'):
             items.append({"title": title, "link": link})
         if len(items) >= ITEMS_PER_SITE:
             break
+
     return items
 
 def h(s):
@@ -96,12 +106,10 @@ def h(s):
 def build_html(results):
     now = datetime.now(JST).strftime("%Y/%m/%d %H:%M")
     cats = list(dict.fromkeys(s["cat"] for s in SITES))
-
     cat_tabs = "\n".join(
         f'<button class="fb" data-c="{h(c)}" onclick="sf(\'{h(c)}\',this)">{h(c)}</button>'
         for c in cats
     )
-
     blocks = []
     for site in SITES:
         items = results.get(site["name"], [])
@@ -114,15 +122,10 @@ def build_html(results):
             body = f'<ul class="al">{lis}</ul>'
         else:
             body = '<div class="em">⚠ 取得できませんでした</div>'
-
-        blocks.append(f'''<div class="sb" data-c="{h(site["cat"])}">
-<div class="sh">
-<img class="fv" src="{favicon}" onerror="this.style.display='none'">
+        blocks.append(f'''<div class="sb" data-c="{h(site['cat'])}">
+<div class="sh"><img class="fv" src="{favicon}" onerror="this.style.display=\'none\'">
 <a class="sn" href="{h(site['url'])}" target="_blank">{h(site['name'])}</a>
-<span class="sm">{len(items)}件</span>
-</div>{body}</div>''')
-
-    grid = "\n".join(blocks)
+<span class="sm">{len(items)}件</span></div>{body}</div>''')
 
     return f'''<!DOCTYPE html>
 <html lang="ja">
@@ -139,8 +142,6 @@ header{{background:linear-gradient(135deg,#1a0005,#0f0f13 50%,#001a0f);border-bo
 .logo{{font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:2px;color:var(--ac);}}
 .logo span{{color:var(--tx);}}
 .lu{{color:var(--mu);font-size:11px;flex:1;}}
-.rb{{background:var(--ac);color:#fff;border:none;padding:5px 13px;border-radius:3px;cursor:pointer;font-size:12px;font-weight:700;text-decoration:none;}}
-.rb:hover{{background:#c03030;}}
 .fb-bar{{background:var(--sf);border-bottom:1px solid var(--bd);padding:0 10px;display:flex;gap:1px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;}}
 .fb-bar::-webkit-scrollbar{{display:none;}}
 .fb{{background:none;border:none;color:var(--mu);padding:10px 14px;cursor:pointer;font-family:'Noto Sans JP',sans-serif;font-size:12px;white-space:nowrap;border-bottom:2px solid transparent;transition:.15s;}}
@@ -169,15 +170,12 @@ header{{background:linear-gradient(135deg,#1a0005,#0f0f13 50%,#001a0f);border-bo
 <header>
   <div class="logo">まとめ<span>速報</span></div>
   <span class="lu">更新: {now}</span>
-  <a class="rb" href="https://github.com" onclick="return false;" title="GitHub Actionsで自動更新">自動更新中</a>
 </header>
 <div class="fb-bar">
   <button class="fb act" data-c="all" onclick="sf('all',this)">すべて</button>
   {cat_tabs}
 </div>
-<div class="grid" id="grid">
-{grid}
-</div>
+<div class="grid">{"".join(blocks)}</div>
 <button id="top" onclick="window.scrollTo({{top:0,behavior:'smooth'}})">↑</button>
 <script>
 function sf(c,btn){{
@@ -193,7 +191,6 @@ window.addEventListener('scroll',()=>document.getElementById('top').classList.to
 def main():
     print(f"RSS取得開始: {len(SITES)}サイト")
     results = {}
-
     def fetch_one(site):
         try:
             items = fetch_rss(site)
@@ -202,19 +199,14 @@ def main():
         except Exception as e:
             print(f"  ✗ {site['name']}: {e}")
             return site["name"], []
-
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
         for name, items in ex.map(fetch_one, SITES):
             results[name] = items
-
     os.makedirs("docs", exist_ok=True)
-    html = build_html(results)
     with open("docs/index.html", "w", encoding="utf-8") as f:
-        f.write(html)
-
+        f.write(build_html(results))
     ok = sum(1 for v in results.values() if v)
     print(f"\n完了: {ok}/{len(SITES)}サイト取得成功")
-    print("docs/index.html を生成しました")
 
 if __name__ == "__main__":
     main()
