@@ -17,9 +17,7 @@ SITES = [
     {"name": "BIPブログ",              "url": "http://bipblog.com/",                  "rss": "http://bipblog.com/index.rdf",                      "cat": "VIP"},
     {"name": "ハムスター速報",         "url": "https://hamusoku.com/",                "rss": "https://hamusoku.com/index.rdf",                    "cat": "ニュース"},
     {"name": "アルファルファモザイク", "url": "https://alfalfalfa.com/",              "rss": "https://alfalfalfa.com/index.rdf",                  "cat": "ニュース"},
-    {"name": "暇人速報",               "url": "http://himasoku.com/",                 "rss": "http://himasoku.com/index.rdf",                     "cat": "VIP"},
     {"name": "ぶる速-VIP",             "url": "http://burusoku-vip.com/",            "rss": "http://burusoku-vip.com/index.rdf",                 "cat": "VIP"},
-    {"name": "2chコピペ情報局",        "url": "https://news.2chblog.jp/",             "rss": "https://news.2chblog.jp/index.rdf",                 "cat": "ニュース"},
     {"name": "もみあげチャ～シュ～",   "url": "https://michaelsan.livedoor.biz/",     "rss": "https://michaelsan.livedoor.biz/index.rdf",         "cat": "スポーツ"},
     {"name": "まとめたニュース",       "url": "http://matometanews.com/",             "rss": "http://matometanews.com/index.rdf",                 "cat": "ニュース"},
     {"name": "マジキチ速報",           "url": "https://majikichi.com/",               "rss": "https://majikichi.com/index.rdf",                   "cat": "ニュース"},
@@ -29,7 +27,6 @@ SITES = [
     {"name": "なんだかおもしろい",     "url": "https://zakuzaku911.com/",             "rss": "https://zakuzaku911.com/index.rdf",                 "cat": "マンガ"},
     {"name": "デジタルニューススレ",   "url": "http://digital-thread.com/",           "rss": "http://digital-thread.com/index.rdf",               "cat": "VIP"},
     {"name": "黒マッチョニュース",     "url": "https://kuromacyo.livedoor.biz/",      "rss": "https://kuromacyo.livedoor.biz/index.rdf",         "cat": "ニュース"},
-    {"name": "2chコピペ保存道場",      "url": "http://2chcopipe.com/",                "rss": "http://2chcopipe.com/index.rdf",                    "cat": "VIP"},
 ]
 
 ITEMS_PER_SITE = 7
