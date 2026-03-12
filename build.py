@@ -27,6 +27,10 @@ SITES = [
     {"name": "なんだかおもしろい",     "url": "https://zakuzaku911.com/",             "rss": "https://zakuzaku911.com/index.rdf",                 "cat": "マンガ"},
     {"name": "デジタルニューススレ",   "url": "http://digital-thread.com/",           "rss": "http://digital-thread.com/index.rdf",               "cat": "VIP"},
     {"name": "黒マッチョニュース",     "url": "https://kuromacyo.livedoor.biz/",      "rss": "https://kuromacyo.livedoor.biz/index.rdf",         "cat": "ニュース"},
+    {"name": "ガジェット2ch",     "url": "http://www.gadget2ch.com/",           "rss": "http://www.gadget2ch.com/index.rdf",              "cat": "ガジェット"},
+    {"name": "いたしん！",         "url": "http://blog.livedoor.jp/itsoku/",     "rss": "http://blog.livedoor.jp/itsoku/index.rdf",        "cat": "VIP"},
+    {"name": "デイトレ速報",       "url": "https://daytrader.ldblog.jp/",        "rss": "https://daytrader.ldblog.jp/index.rdf",           "cat": "株・経済"},
+    {"name": "GIZMODO",            "url": "https://www.gizmodo.jp/",             "rss": "https://www.gizmodo.jp/index.xml",                "cat": "ガジェット"},
 ]
 
 ITEMS_PER_SITE = 7
