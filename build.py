@@ -4,6 +4,7 @@ import urllib.parse
 import gzip
 import re
 import os
+import json
 import concurrent.futures
 from datetime import datetime, timezone, timedelta
 
@@ -27,10 +28,10 @@ SITES = [
     {"name": "なんだかおもしろい",     "url": "https://zakuzaku911.com/",             "rss": "https://zakuzaku911.com/index.rdf",                 "cat": "マンガ"},
     {"name": "デジタルニューススレ",   "url": "http://digital-thread.com/",           "rss": "http://digital-thread.com/index.rdf",               "cat": "VIP"},
     {"name": "黒マッチョニュース",     "url": "https://kuromacyo.livedoor.biz/",      "rss": "https://kuromacyo.livedoor.biz/index.rdf",         "cat": "ニュース"},
-    {"name": "ガジェット2ch",     "url": "http://www.gadget2ch.com/",           "rss": "http://www.gadget2ch.com/index.rdf",              "cat": "ガジェット"},
-    {"name": "いたしん！",         "url": "http://blog.livedoor.jp/itsoku/",     "rss": "http://blog.livedoor.jp/itsoku/index.rdf",        "cat": "VIP"},
-    {"name": "デイトレ速報",       "url": "https://daytrader.ldblog.jp/",        "rss": "https://daytrader.ldblog.jp/index.rdf",           "cat": "株・経済"},
-    {"name": "GIZMODO",            "url": "https://www.gizmodo.jp/",             "rss": "https://www.gizmodo.jp/index.xml",                "cat": "ガジェット"},
+    {"name": "ガジェット2ch",          "url": "http://www.gadget2ch.com/",            "rss": "http://www.gadget2ch.com/index.rdf",               "cat": "ガジェット"},
+    {"name": "いたしん！",             "url": "http://blog.livedoor.jp/itsoku/",      "rss": "http://blog.livedoor.jp/itsoku/index.rdf",         "cat": "VIP"},
+    {"name": "デイトレ速報",           "url": "https://daytrader.ldblog.jp/",         "rss": "https://daytrader.ldblog.jp/index.rdf",            "cat": "株・経済"},
+    {"name": "GIZMODO",                "url": "https://www.gizmodo.jp/",              "rss": "https://www.gizmodo.jp/index.xml",                 "cat": "ガジェット"},
 ]
 
 ITEMS_PER_SITE = 7
@@ -41,8 +42,6 @@ def decode_entities(s):
     return s.replace('&amp;','&').replace('&lt;','<').replace('&gt;','>').replace('&quot;','"').replace('&apos;',"'")
 
 def extract_tag(text, tag):
-    """タグ名（名前空間なし）の中身を取得"""
-    # <xxx:tag> or <tag> 両方対応
     m = re.search(r'<(?:[^:>\s]+:)?' + tag + r'(?:\s[^>]*)?>([^<]*(?:<!\[CDATA\[.*?\]\]>[^<]*)*)</(?:[^:>]+:)?' + tag + r'>', text, re.DOTALL)
     if m:
         val = m.group(1)
@@ -65,31 +64,25 @@ def fetch_rss(site):
 
     for enc in ("utf-8", "shift_jis", "euc-jp", "utf-8-sig"):
         try:
-            text = raw.decode(enc)
-            break
+            text = raw.decode(enc); break
         except Exception:
             continue
     else:
         text = raw.decode("utf-8", errors="replace")
 
-    # <item> ブロックを正規表現で抽出（名前空間付きも対応）
     item_blocks = re.findall(r'<(?:[^:>\s]+:)?item[\s>].*?</(?:[^:>]+:)?item>', text, re.DOTALL)
-
     items = []
     for block in item_blocks:
         title = decode_entities(extract_tag(block, 'title'))
         link  = decode_entities(extract_tag(block, 'link'))
         if not link:
             link = decode_entities(extract_tag(block, 'guid'))
-        # タグを除去
         title = re.sub(r'<[^>]+>', '', title).strip()
         link  = re.sub(r'<[^>]+>', '', link).strip()
-
         if title and link and link.startswith('http'):
             items.append({"title": title, "link": link})
         if len(items) >= ITEMS_PER_SITE:
             break
-
     return items
 
 def h(s):
@@ -102,22 +95,36 @@ def build_html(results):
         f'<button class="fb" data-c="{h(c)}" onclick="sf(\'{h(c)}\',this)">{h(c)}</button>'
         for c in cats
     )
+
+    # 全記事のURLをJSON化（新着判定用）
+    all_links = {}
+    for site in SITES:
+        items = results.get(site["name"], [])
+        all_links[site["name"]] = [i["link"] for i in items]
+    links_json = json.dumps(all_links, ensure_ascii=False)
+
     blocks = []
     for site in SITES:
         items = results.get(site["name"], [])
         favicon = f"https://www.google.com/s2/favicons?sz=32&domain_url={urllib.parse.quote(site['url'])}"
         if items:
-            lis = "\n".join(
-                f'<li><a href="{h(i["link"])}" target="_blank" rel="noopener">{h(i["title"])}</a></li>'
-                for i in items
-            )
-            body = f'<ul class="al">{lis}</ul>'
+            lis = []
+            for i in items:
+                lis.append(
+                    f'<li><a href="{h(i["link"])}" target="_blank" rel="noopener" data-url="{h(i["link"])}">'
+                    f'<span class="nb" style="display:none">NEW</span>{h(i["title"])}</a></li>'
+                )
+            body = f'<ul class="al">{"".join(lis)}</ul>'
         else:
             body = '<div class="em">⚠ 取得できませんでした</div>'
-        blocks.append(f'''<div class="sb" data-c="{h(site['cat'])}">
-<div class="sh"><img class="fv" src="{favicon}" onerror="this.style.display=\'none\'">
-<a class="sn" href="{h(site['url'])}" target="_blank">{h(site['name'])}</a>
-<span class="sm">{len(items)}件</span></div>{body}</div>''')
+        blocks.append(
+            f'<div class="sb" data-c="{h(site["cat"])}" data-site="{h(site["name"])}">'
+            f'<div class="sh"><img class="fv" src="{favicon}" onerror="this.style.display=\'none\'">'
+            f'<a class="sn" href="{h(site["url"])}" target="_blank">{h(site["name"])}</a>'
+            f'<span class="sm">{len(items)}件'
+            f'<span class="nc" style="display:none"> (<span class="ncc">0</span>新着)</span></span></div>'
+            f'{body}</div>'
+        )
 
     return f'''<!DOCTYPE html>
 <html lang="ja">
@@ -146,12 +153,14 @@ header{{background:linear-gradient(135deg,#1a0005,#0f0f13 50%,#001a0f);border-bo
 .sn{{font-weight:700;font-size:12px;color:var(--tx);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-decoration:none;}}
 .sn:hover{{color:var(--ac);}}
 .sm{{font-size:10px;color:var(--mu);}}
+.nc{{color:var(--ac);font-weight:700;}}
 .al{{list-style:none;}}
 .al li{{border-bottom:1px solid var(--bd);}}
 .al li:last-child{{border-bottom:none;}}
 .al a{{display:block;padding:6px 11px;color:var(--tx);text-decoration:none;line-height:1.55;font-size:12.5px;-webkit-tap-highlight-color:transparent;}}
 .al a:hover,.al a:active{{background:var(--s2);color:#fff;}}
 .al a:visited{{color:#7a7a9a;}}
+.nb{{display:inline-block;background:var(--ac);color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;margin-right:5px;vertical-align:middle;letter-spacing:.5px;}}
 .em{{padding:13px;font-size:11px;color:#ff7070;text-align:center;}}
 #top{{position:fixed;bottom:18px;right:16px;background:var(--ac);color:#fff;border:none;width:38px;height:38px;border-radius:50%;font-size:18px;cursor:pointer;opacity:0;transition:.3s;z-index:50;}}
 #top.show{{opacity:1;}}
@@ -170,6 +179,40 @@ header{{background:linear-gradient(135deg,#1a0005,#0f0f13 50%,#001a0f);border-bo
 <div class="grid">{"".join(blocks)}</div>
 <button id="top" onclick="window.scrollTo({{top:0,behavior:'smooth'}})">↑</button>
 <script>
+// 今回の全記事URL
+const CURRENT = {links_json};
+
+// 前回の記事URLをlocalStorageから読み込み
+const PREV_KEY = 'matome_seen_v1';
+let prev = {{}};
+try {{ prev = JSON.parse(localStorage.getItem(PREV_KEY) || '{{}}'); }} catch(e) {{}}
+
+// 新着バッジを表示
+let totalNew = 0;
+document.querySelectorAll('.sb').forEach(block => {{
+  const site = block.dataset.site;
+  const prevLinks = new Set(prev[site] || []);
+  const curLinks = CURRENT[site] || [];
+  let newCount = 0;
+  block.querySelectorAll('a[data-url]').forEach(a => {{
+    if (!prevLinks.has(a.dataset.url)) {{
+      a.querySelector('.nb').style.display = 'inline-block';
+      newCount++;
+      totalNew++;
+    }}
+  }});
+  if (newCount > 0) {{
+    block.querySelector('.nc').style.display = 'inline';
+    block.querySelector('.ncc').textContent = newCount;
+  }}
+}});
+
+// タイトルに新着数を表示
+if (totalNew > 0) document.title = `(${{totalNew}}新着) まとめ速報`;
+
+// 今回の記事URLを保存（次回の比較用）
+try {{ localStorage.setItem(PREV_KEY, JSON.stringify(CURRENT)); }} catch(e) {{}}
+
 function sf(c,btn){{
   document.querySelectorAll('.fb').forEach(b=>b.classList.remove('act'));
   btn.classList.add('act');
