@@ -1,0 +1,30 @@
+name: Update Matome
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'   # 30分ごとに自動実行
+  workflow_dispatch:           # 手動実行ボタンも使える
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Fetch RSS and build HTML
+        run: python3 build.py
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs
+          force_orphan: true
