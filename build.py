@@ -34,7 +34,24 @@ SITES = [
     {"name": "GIZMODO",                "url": "https://www.gizmodo.jp/",              "rss": "https://www.gizmodo.jp/index.xml",                 "cat": "ガジェット"},
 ]
 
+# AdGuardにブロックされているドメイン → Webアーカイブ経由で開く
+BLOCKED_DOMAINS = [
+    "news4vip.livedoor.biz",
+    "blog.livedoor.jp",
+    "livedoor.biz",
+]
+
 ITEMS_PER_SITE = 7
+
+def is_blocked(url):
+    for domain in BLOCKED_DOMAINS:
+        if domain in url:
+            return True
+    return False
+
+def archive_url(url):
+    """Webアーカイブの最新キャッシュURLに変換"""
+    return f"https://web.archive.org/web/2/{url}"
 
 def decode_entities(s):
     s = re.sub(r'&#(\d+);', lambda m: chr(int(m.group(1))), s)
@@ -80,7 +97,9 @@ def fetch_rss(site):
         title = re.sub(r'<[^>]+>', '', title).strip()
         link  = re.sub(r'<[^>]+>', '', link).strip()
         if title and link and link.startswith('http'):
-            items.append({"title": title, "link": link})
+            # ブロック対象ドメインはアーカイブURLに変換
+            final_link = archive_url(link) if is_blocked(link) else link
+            items.append({"title": title, "link": final_link, "archived": is_blocked(link)})
         if len(items) >= ITEMS_PER_SITE:
             break
     return items
@@ -96,7 +115,6 @@ def build_html(results):
         for c in cats
     )
 
-    # 全記事のURLをJSON化（新着判定用）
     all_links = {}
     for site in SITES:
         items = results.get(site["name"], [])
@@ -107,20 +125,25 @@ def build_html(results):
     for site in SITES:
         items = results.get(site["name"], [])
         favicon = f"https://www.google.com/s2/favicons?sz=32&domain_url={urllib.parse.quote(site['url'])}"
+        archived_site = is_blocked(site["url"])
         if items:
             lis = []
             for i in items:
+                archived_badge = '<span class="ab" title="アーカイブ経由">📦</span>' if i.get("archived") else ''
                 lis.append(
                     f'<li><a href="{h(i["link"])}" target="_blank" rel="noopener" data-url="{h(i["link"])}">'
-                    f'<span class="nb" style="display:none">NEW</span>{h(i["title"])}</a></li>'
+                    f'<span class="nb" style="display:none">NEW</span>{archived_badge}{h(i["title"])}</a></li>'
                 )
             body = f'<ul class="al">{"".join(lis)}</ul>'
         else:
             body = '<div class="em">⚠ 取得できませんでした</div>'
+
+        archived_label = '<span class="abl" title="アーカイブ経由で開きます">📦</span>' if archived_site else ''
         blocks.append(
             f'<div class="sb" data-c="{h(site["cat"])}" data-site="{h(site["name"])}">'
             f'<div class="sh"><img class="fv" src="{favicon}" onerror="this.style.display=\'none\'">'
             f'<a class="sn" href="{h(site["url"])}" target="_blank">{h(site["name"])}</a>'
+            f'{archived_label}'
             f'<span class="sm">{len(items)}件'
             f'<span class="nc" style="display:none"> (<span class="ncc">0</span>新着)</span></span></div>'
             f'{body}</div>'
@@ -154,13 +177,15 @@ header{{background:linear-gradient(135deg,#1a0005,#0f0f13 50%,#001a0f);border-bo
 .sn:hover{{color:var(--ac);}}
 .sm{{font-size:10px;color:var(--mu);}}
 .nc{{color:var(--ac);font-weight:700;}}
+.abl{{font-size:12px;flex-shrink:0;}}
 .al{{list-style:none;}}
 .al li{{border-bottom:1px solid var(--bd);}}
 .al li:last-child{{border-bottom:none;}}
 .al a{{display:block;padding:6px 11px;color:var(--tx);text-decoration:none;line-height:1.55;font-size:12.5px;-webkit-tap-highlight-color:transparent;}}
 .al a:hover,.al a:active{{background:var(--s2);color:#fff;}}
 .al a:visited{{color:#7a7a9a;}}
-.nb{{display:inline-block;background:var(--ac);color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;margin-right:5px;vertical-align:middle;letter-spacing:.5px;}}
+.nb{{display:inline-block;background:var(--ac);color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;margin-right:4px;vertical-align:middle;letter-spacing:.5px;}}
+.ab{{font-size:11px;margin-right:3px;vertical-align:middle;opacity:0.7;}}
 .em{{padding:13px;font-size:11px;color:#ff7070;text-align:center;}}
 #top{{position:fixed;bottom:18px;right:16px;background:var(--ac);color:#fff;border:none;width:38px;height:38px;border-radius:50%;font-size:18px;cursor:pointer;opacity:0;transition:.3s;z-index:50;}}
 #top.show{{opacity:1;}}
@@ -179,15 +204,11 @@ header{{background:linear-gradient(135deg,#1a0005,#0f0f13 50%,#001a0f);border-bo
 <div class="grid">{"".join(blocks)}</div>
 <button id="top" onclick="window.scrollTo({{top:0,behavior:'smooth'}})">↑</button>
 <script>
-// 今回の全記事URL
 const CURRENT = {links_json};
-
-// 前回の記事URLをlocalStorageから読み込み
 const PREV_KEY = 'matome_seen_v1';
 let prev = {{}};
 try {{ prev = JSON.parse(localStorage.getItem(PREV_KEY) || '{{}}'); }} catch(e) {{}}
 
-// 新着バッジを表示
 let totalNew = 0;
 document.querySelectorAll('.sb').forEach(block => {{
   const site = block.dataset.site;
@@ -206,11 +227,7 @@ document.querySelectorAll('.sb').forEach(block => {{
     block.querySelector('.ncc').textContent = newCount;
   }}
 }});
-
-// タイトルに新着数を表示
 if (totalNew > 0) document.title = `(${{totalNew}}新着) まとめ速報`;
-
-// 今回の記事URLを保存（次回の比較用）
 try {{ localStorage.setItem(PREV_KEY, JSON.stringify(CURRENT)); }} catch(e) {{}}
 
 function sf(c,btn){{
@@ -229,7 +246,8 @@ def main():
     def fetch_one(site):
         try:
             items = fetch_rss(site)
-            print(f"  ✓ {site['name']} ({len(items)}件)")
+            archived = sum(1 for i in items if i.get("archived"))
+            print(f"  ✓ {site['name']} ({len(items)}件{f', {archived}件アーカイブ' if archived else ''})")
             return site["name"], items
         except Exception as e:
             print(f"  ✗ {site['name']}: {e}")
