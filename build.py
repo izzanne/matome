@@ -12,7 +12,6 @@ JST = timezone(timedelta(hours=9))
 
 SITES = [
     {"name": "痛いニュース",           "url": "https://itainews.com/",                "rss": "https://itainews.com/index.rdf",                   "cat": "ニュース"},
-    {"name": "ニュー速クオリティ",     "url": "https://news4vip.livedoor.biz/",       "rss": "https://news4vip.livedoor.biz/index.rdf",          "cat": "VIP"},
     {"name": "カナ速",                 "url": "http://kanasoku.info/",                "rss": "http://kanasoku.info/index.rdf",                    "cat": "VIP"},
     {"name": "VIPPERな俺",             "url": "http://blog.livedoor.jp/news23vip/",   "rss": "http://blog.livedoor.jp/news23vip/index.rdf",       "cat": "VIP"},
     {"name": "BIPブログ",              "url": "http://bipblog.com/",                  "rss": "http://bipblog.com/index.rdf",                      "cat": "VIP"},
