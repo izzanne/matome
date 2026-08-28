@@ -2,7 +2,7 @@ name: Update Matome
 
 on:
   schedule:
-    - cron: '*/30 * * * *'   # 30分ごとに自動実行
+    - cron: '7,37 * * * *'   # 30分ごとに自動実行
   workflow_dispatch:           # 手動実行ボタンも使える
 
 permissions:
